@@ -55,4 +55,6 @@ def load(path: Path | None = None) -> Settings:
     settings = Settings.model_validate(data)
     if override := os.environ.get("DAYKEEP_HOME"):
         settings.app.home = Path(override)
+    if key := os.environ.get("DAYKEEP_API_KEY"):
+        settings.model.api_key = key
     return settings
