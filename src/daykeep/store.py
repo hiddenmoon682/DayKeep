@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date as Date
 from pathlib import Path
 
 import yaml
@@ -20,11 +20,11 @@ def entries_dir(home: Path) -> Path:
     return home / "entries"
 
 
-def day_path(home: Path, d: date) -> Path:
+def day_path(home: Path, d: Date) -> Path:
     return days_dir(home) / f"{d.isoformat()}.json"
 
 
-def entry_path(home: Path, d: date) -> Path:
+def entry_path(home: Path, d: Date) -> Path:
     return entries_dir(home) / f"{d.isoformat()}.md"
 
 
@@ -70,12 +70,12 @@ def _atomic_write(path: Path, text: str) -> None:
 @dataclass
 class DayState:
     home: Path
-    date: date
-    record: DayRecord = field(default_factory=DayRecord)
+    date: Date
+    record: DayRecord
     messages: list[ModelMessage] = field(default_factory=list)
 
     @classmethod
-    def load(cls, home: Path, d: date) -> "DayState":
+    def load(cls, home: Path, d: Date) -> "DayState":
         path = day_path(home, d)
         if not path.exists():
             return cls(home=home, date=d, record=DayRecord(date=d))
@@ -97,20 +97,20 @@ class DayState:
         _atomic_write(entry_path(self.home, self.date), render_markdown(self.record))
 
 
-def list_days(home: Path) -> list[date]:
+def list_days(home: Path) -> list[Date]:
     directory = days_dir(home)
     if not directory.exists():
         return []
-    found = [date.fromisoformat(p.stem) for p in directory.glob("*.json")]
+    found = [Date.fromisoformat(p.stem) for p in directory.glob("*.json")]
     return sorted(found, reverse=True)
 
 
-def read_entry_text(home: Path, d: date) -> str | None:
+def read_entry_text(home: Path, d: Date) -> str | None:
     path = entry_path(home, d)
     return path.read_text(encoding="utf-8") if path.exists() else None
 
 
-def load_record(home: Path, d: date) -> DayRecord | None:
+def load_record(home: Path, d: Date) -> DayRecord | None:
     path = day_path(home, d)
     if not path.exists():
         return None

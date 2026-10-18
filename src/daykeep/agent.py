@@ -3,6 +3,7 @@ from pathlib import Path
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.models import Model
 
 from daykeep.models import DayMeta, DayRecord, Moment, Mood
 from daykeep.store import DayState, list_days, load_record, read_entry_text, render_markdown
@@ -125,7 +126,7 @@ def instructions(recap: str, today: date) -> str:
 {recap}"""
 
 
-def build_agent(model) -> Agent[Deps, str]:
+def build_agent(model: Model) -> Agent[Deps, str]:
     a: Agent[Deps, str] = Agent(model, deps_type=Deps)
 
     @a.instructions

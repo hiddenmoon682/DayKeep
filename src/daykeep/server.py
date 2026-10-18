@@ -15,6 +15,7 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 
 from daykeep import store, window
 from daykeep.agent import build_agent
@@ -34,25 +35,21 @@ def render_markdown_html(text: str) -> str:
     return _md.render(text)
 
 
-def transcript(messages: list[ModelMessage]) -> list[dict]:
-    out = []
+def transcript(messages: list[ModelMessage]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
     for message in messages:
         if isinstance(message, ModelRequest):
             for part in message.parts:
                 if isinstance(part, UserPromptPart) and isinstance(part.content, str):
                     out.append({"role": "user", "text": strip_stamp(part.content)})
         elif isinstance(message, ModelResponse):
-            text = "\n".join(
-                part.content
-                for part in message.parts
-                if isinstance(getattr(part, "content", None), str)
-            )
+            text = "\n".join(part.content for part in message.parts if isinstance(part, TextPart))
             if text:
                 out.append({"role": "assistant", "text": text})
     return out
 
 
-def create_app(settings: Settings, model) -> FastAPI:
+def create_app(settings: Settings, model: Model) -> FastAPI:
     app = FastAPI()
     agent_instance = build_agent(model)
     lock = asyncio.Lock()
