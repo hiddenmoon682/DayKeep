@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from markdown_it import MarkdownIt
 from pydantic_ai import FunctionToolResultEvent, PartDeltaEvent, PartStartEvent, TextPartDelta
 from pydantic_ai.messages import (
@@ -55,6 +56,7 @@ def create_app(settings: Settings, model) -> FastAPI:
     app = FastAPI()
     agent_instance = build_agent(model)
     lock = asyncio.Lock()
+    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
     def today_state():
         d = logical_date(datetime.now(), settings.app.rollover_hour)

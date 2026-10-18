@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>DayKeep</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <span id="date"></span>
+    <select id="history"><option value="">往日…</option></select>
+    <button id="back" hidden>回到今天</button>
+  </header>
+  <div id="banner" hidden></div>
+  <main>
+    <section id="chat">
+      <div id="transcript"></div>
+      <div id="composer">
+        <textarea id="input" rows="3" placeholder="今天怎么样？（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button id="send">发送</button>
+      </div>
+    </section>
+    <aside id="diary"></aside>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
