@@ -48,7 +48,9 @@ def load(path: Path | None = None) -> Settings:
     path = path or default_path()
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(TEMPLATE, encoding="utf-8")
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(TEMPLATE, encoding="utf-8")
+        os.replace(tmp, path)
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     settings = Settings.model_validate(data)
     if override := os.environ.get("DAYKEEP_HOME"):
