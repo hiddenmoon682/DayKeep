@@ -764,6 +764,14 @@ def test_trim_drops_nothing_when_one_chunk_does_not_fit_the_floor():
     assert trimmed == messages
 
 
+def test_trim_is_a_noop_below_min_turns():
+    """归档本身不到 MIN_TURNS 轮时一块都凑不满：不丢、不崩、不返回负数。"""
+    messages = many_turns(5, size=300)
+    trimmed, dropped = window.trim(messages, budget=1_000)
+    assert dropped == 0
+    assert trimmed == messages
+
+
 def test_trim_drops_whole_chunk_for_cache_stability():
     """连续两次裁剪之间，前一轮的窗口是后一轮窗口的前缀。"""
     messages = many_turns(200)
@@ -881,7 +889,7 @@ def trim(
     if len(starts) <= 1:
         return list(messages), 0
 
-    max_chunks = (len(starts) - min_turns) // chunk
+    max_chunks = max(0, (len(starts) - min_turns) // chunk)
     drop_turns = max_chunks * chunk
     for k in range(1, max_chunks + 1):
         if size_of(messages[starts[k * chunk] :]) <= target:
@@ -911,7 +919,7 @@ def with_notice(
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_window.py -v`
-Expected: 15 passed。
+Expected: 16 passed。
 若 `test_size_of_uses_reported_tokens_when_present` 失败，说明 `ModelResponse` 不接受 `usage=` 关键字或 `total_tokens` 字段名不同，把该测试改成构造真实 usage 的等价写法（其余测试不依赖它）。
 
 - [ ] **Step 5: 提交**
