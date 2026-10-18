@@ -1596,7 +1596,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from markdown_it import MarkdownIt
 from pydantic_ai import FunctionToolResultEvent, PartDeltaEvent, TextPartDelta
 from pydantic_ai.messages import (
@@ -1701,21 +1700,12 @@ def create_app(settings: Settings, model) -> FastAPI:
                     window_messages = window.with_notice(window_messages, state.record, dropped)
                     started = False
                     try:
-                        async with agent_instance.run_stream(
-                            prompt, message_history=window_messages, deps=state
-                        ) as run:
-                            async for event in run:
-                                if isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-                                    started = True
-                                    yield sse("delta", {"text": event.delta.content_delta})
-                                elif isinstance(event, FunctionToolResultEvent):
-                                    label = str(getattr(event.part, "content", ""))
-                                    yield sse("tool", {"label": label})
-                                    if event.part.tool_name in MUTATING_TOOLS:
-                                        yield sse(
-                                            "entry",
-                                            {"html": render_markdown_html(store.render_markdown(state.record))},
-                                        )
+                        # 实际写法见实现（200479f）：pydantic-ai 2.57 上 `run_stream` 的返回值不可异步迭代，
+                        # 必须用 `agent.run_stream_events(...)` 拿事件流；另外**首个文本片段在 `PartStartEvent`
+                        # 里而不是 `PartDeltaEvent`**，只处理 delta 会让每条回复丢掉开头那几个字。
+                        # 循环体内需同时处理 PartStartEvent（首个文本块）与 PartDeltaEvent（后续增量），
+                        # 两者都推 `delta`；FunctionToolResultEvent 推 `tool`，改日记的工具再推 `entry`。
+                        # 成功后把本次新增消息追加进**完整归档** state.messages，然后 state.save()。
                         state.messages.extend(run.new_messages())
                         state.save()
                         break
