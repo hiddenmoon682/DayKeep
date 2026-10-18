@@ -67,6 +67,9 @@ def trim(
     因为入参始终是完整归档，若按"能塞进 target 的最小起点"来丢，归档每长一轮、
     起点就往后挪一轮，窗口前缀每轮都变，prompt cache 永远命中不了。
     对齐到固定块之后，起点在一次裁剪后的若干轮内钉死不动，前缀才稳定。
+
+    只能整块地丢，凑不满一整块就一块都不丢：宁可让这一次请求超出 budget，
+    也不能让起点每轮挪一轮。budget 比模型真实窗口低 32k，超出 budget 不等于超出窗口。
     """
     if size_of(messages) <= budget:
         return list(messages), 0
@@ -75,14 +78,12 @@ def trim(
     if len(starts) <= 1:
         return list(messages), 0
 
-    max_drop = max(0, len(starts) - min_turns)
-    drop_turns = max_drop
-    candidate = chunk
-    while candidate <= max_drop:
-        if size_of(messages[starts[candidate] :]) <= target:
-            drop_turns = candidate
+    max_chunks = (len(starts) - min_turns) // chunk
+    drop_turns = max_chunks * chunk
+    for k in range(1, max_chunks + 1):
+        if size_of(messages[starts[k * chunk] :]) <= target:
+            drop_turns = k * chunk
             break
-        candidate += chunk
 
     return list(messages[starts[drop_turns] :]), drop_turns
 

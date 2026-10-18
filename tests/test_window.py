@@ -1,7 +1,14 @@
 from datetime import date
 
 import pytest
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.usage import RequestUsage
 
 from daykeep import window
@@ -69,19 +76,52 @@ def test_trim_starts_at_turn_boundary():
 
 
 def test_trim_never_orphans_a_tool_call():
-    """每一轮的 ModelRequest/ModelResponse 必须成对出现，不能从回复中间切开。"""
-    messages = many_turns(200)
-    trimmed, _ = window.trim(messages, budget=20_000)
+    """带工具调用的轮次必须整轮保留：不能留下有 tool call 却没有 tool result 的历史。"""
+    messages = []
+    for i in range(200):
+        messages.append(ModelRequest(parts=[UserPromptPart(content=f"第{i}轮 " + "字" * 200)]))
+        messages.append(ModelResponse(parts=[ToolCallPart("upsert_moment", {"title": f"t{i}"})]))
+        messages.append(ModelRequest(parts=[ToolReturnPart("upsert_moment", f"已记录 #{i}")]))
+        messages.append(ModelResponse(parts=[TextPart("记下了。")]))
+
+    trimmed, dropped = window.trim(messages, budget=20_000)
+    assert dropped > 0
     assert isinstance(trimmed[0], ModelRequest)
-    assert len(trimmed) % 2 == 0
+    assert any(isinstance(p, UserPromptPart) for p in trimmed[0].parts)
+
+    calls = sum(
+        1
+        for m in trimmed
+        if isinstance(m, ModelResponse)
+        for p in m.parts
+        if isinstance(p, ToolCallPart)
+    )
+    returns = sum(
+        1
+        for m in trimmed
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+        if isinstance(p, ToolReturnPart)
+    )
+    assert calls > 0
+    assert calls == returns
 
 
-def test_trim_keeps_at_least_min_turns():
-    """最近 30 轮落在 target 与 budget 之间时，下限生效：只丢到剩 30 轮。"""
+def test_trim_keeps_at_least_min_turns_and_stays_chunk_aligned():
+    """凑不满整块就不丢：200 轮里最多只能丢 8 个整块（160 轮），于是剩 40 轮。"""
     messages = many_turns(200, size=300)
     trimmed, dropped = window.trim(messages, budget=10_000)
-    assert dropped == 200 - window.MIN_TURNS
-    assert len(window.turn_starts(trimmed)) == window.MIN_TURNS
+    assert dropped == 160
+    assert dropped % window.CHUNK_TURNS == 0
+    assert len(window.turn_starts(trimmed)) >= window.MIN_TURNS
+
+
+def test_trim_drops_nothing_when_one_chunk_does_not_fit_the_floor():
+    """40 轮时最多只能丢 0 个整块（(40-30)//20 == 0），因此一块都不丢。"""
+    messages = many_turns(40, size=300)
+    trimmed, dropped = window.trim(messages, budget=10_000)
+    assert dropped == 0
+    assert trimmed == messages
 
 
 def test_trim_drops_whole_chunk_for_cache_stability():
