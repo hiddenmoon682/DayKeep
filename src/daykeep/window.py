@@ -78,7 +78,7 @@ def trim(
     if len(starts) <= 1:
         return list(messages), 0
 
-    max_chunks = (len(starts) - min_turns) // chunk
+    max_chunks = max(0, (len(starts) - min_turns) // chunk)
     drop_turns = max_chunks * chunk
     for k in range(1, max_chunks + 1):
         if size_of(messages[starts[k * chunk] :]) <= target:

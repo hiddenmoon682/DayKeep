@@ -124,6 +124,14 @@ def test_trim_drops_nothing_when_one_chunk_does_not_fit_the_floor():
     assert trimmed == messages
 
 
+def test_trim_is_a_noop_below_min_turns():
+    """归档本身不到 MIN_TURNS 轮时一块都凑不满：不丢、不崩、不返回负数。"""
+    messages = many_turns(5, size=300)
+    trimmed, dropped = window.trim(messages, budget=1_000)
+    assert dropped == 0
+    assert trimmed == messages
+
+
 def test_trim_drops_whole_chunk_for_cache_stability():
     """连续两次裁剪之间，前一轮的窗口是后一轮窗口的前缀。"""
     messages = many_turns(200)
