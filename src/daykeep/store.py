@@ -108,3 +108,12 @@ def list_days(home: Path) -> list[date]:
 def read_entry_text(home: Path, d: date) -> str | None:
     path = entry_path(home, d)
     return path.read_text(encoding="utf-8") if path.exists() else None
+
+
+def load_record(home: Path, d: date) -> DayRecord | None:
+    path = day_path(home, d)
+    if not path.exists():
+        return None
+    import json
+
+    return DayRecord.model_validate(json.loads(path.read_text(encoding="utf-8"))["day"])
