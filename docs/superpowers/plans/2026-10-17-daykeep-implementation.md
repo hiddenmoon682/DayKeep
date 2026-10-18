@@ -639,8 +639,9 @@ git commit -m "feat: 日记数据模型与按天原子存储"
   - `window.turn_starts(messages) -> list[int]`
   - `window.trim(messages, budget) -> tuple[list[ModelMessage], int]`（第二个值是丢掉的轮数）
   - `window.with_notice(messages, record: DayRecord, dropped: int) -> list[ModelMessage]`
+  - 常量：`MIN_TURNS = 30`、`CHUNK_TURNS = 20`、`TARGET_RATIO = 0.7`、`HEADROOM = 32_000`
 
-**不变量（本任务的核心，必须有测试锁住）：** 裁剪结果的第一条一定是带用户发言的 `ModelRequest`；永远不出现「有工具调用、没有工具结果」的历史；结果是入参的纯函数（不读文件、不存状态）；两次裁剪之间窗口只在末尾追加，因此前一轮的窗口必然是后一轮窗口的前缀。
+**不变量（本任务的核心，必须有测试锁住）：** 裁剪结果的第一条一定是带用户发言的 `ModelRequest`；永远不出现「有工具调用、没有工具结果」的历史；结果是入参的纯函数（不读文件、不存状态）；**丢的轮数必须是 `CHUNK_TURNS` 的整数倍**，因此两次裁剪之间窗口只在末尾追加，前一轮的窗口必然是后一轮窗口的前缀。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -723,8 +724,10 @@ def test_trim_never_orphans_a_tool_call():
 
 
 def test_trim_keeps_at_least_min_turns():
-    messages = many_turns(200)
-    trimmed, dropped = window.trim(messages, budget=1_000)
+    """最近 30 轮落在 target 与 budget 之间时，下限生效：只丢到剩 30 轮。"""
+    messages = many_turns(200, size=300)
+    trimmed, dropped = window.trim(messages, budget=10_000)
+    assert dropped == 200 - window.MIN_TURNS
     assert len(window.turn_starts(trimmed)) == window.MIN_TURNS
 
 
@@ -773,6 +776,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from daykeep.models import DayRecord
 
 MIN_TURNS = 30
+CHUNK_TURNS = 20
 TARGET_RATIO = 0.7
 HEADROOM = 32_000
 
@@ -825,7 +829,15 @@ def trim(
     budget: int,
     min_turns: int = MIN_TURNS,
     target_ratio: float = TARGET_RATIO,
+    chunk: int = CHUNK_TURNS,
 ) -> tuple[list[ModelMessage], int]:
+    """超预算时从最老的一端丢整轮。
+
+    丢的轮数必须是 chunk 的整数倍 —— 这条是本函数唯一容易被写错的地方。
+    因为入参始终是完整归档，若按"能塞进 target 的最小起点"来丢，归档每长一轮、
+    起点就往后挪一轮，窗口前缀每轮都变，prompt cache 永远命中不了。
+    对齐到固定块之后，起点在一次裁剪后的若干轮内钉死不动，前缀才稳定。
+    """
     if size_of(messages) <= budget:
         return list(messages), 0
     target = int(budget * target_ratio)
@@ -833,17 +845,16 @@ def trim(
     if len(starts) <= 1:
         return list(messages), 0
 
-    min_keep = starts[-min_turns] if len(starts) >= min_turns else starts[0]
-    fit = next((s for s in starts if s > 0 and size_of(messages[s:]) <= target), None)
+    max_drop = max(0, len(starts) - min_turns)
+    drop_turns = max_drop
+    candidate = chunk
+    while candidate <= max_drop:
+        if size_of(messages[starts[candidate] :]) <= target:
+            drop_turns = candidate
+            break
+        candidate += chunk
 
-    if size_of(messages[min_keep:]) > budget:
-        # 最近 min_turns 轮本身就超预算，只能继续往下丢
-        keep_from = fit if fit is not None else starts[-1]
-    else:
-        keep_from = min(fit, min_keep) if fit is not None else min_keep
-
-    dropped = sum(1 for s in starts if s < keep_from)
-    return list(messages[keep_from:]), dropped
+    return list(messages[starts[drop_turns] :]), drop_turns
 
 
 def with_notice(
