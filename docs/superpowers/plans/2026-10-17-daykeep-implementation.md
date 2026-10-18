@@ -339,7 +339,6 @@ git commit -m "feat: 项目骨架、配置加载与逻辑日"
 from datetime import date
 from pathlib import Path
 
-import pytest
 import yaml
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
@@ -641,7 +640,7 @@ git commit -m "feat: 日记数据模型与按天原子存储"
   - `window.with_notice(messages, record: DayRecord, dropped: int) -> list[ModelMessage]`
   - 常量：`MIN_TURNS = 30`、`CHUNK_TURNS = 20`、`TARGET_RATIO = 0.7`、`HEADROOM = 32_000`
 
-**不变量（本任务的核心，必须有测试锁住）：** 裁剪结果的第一条一定是带用户发言的 `ModelRequest`；永远不出现「有工具调用、没有工具结果」的历史；结果是入参的纯函数（不读文件、不存状态）；**丢的轮数必须是 `CHUNK_TURNS` 的整数倍**，因此两次裁剪之间窗口只在末尾追加，前一轮的窗口必然是后一轮窗口的前缀。
+**不变量（本任务的核心，必须有测试锁住）：** 裁剪结果的第一条一定是带用户发言的 `ModelRequest`；永远不出现「有工具调用、没有工具结果」的历史；结果是入参的纯函数（不读文件、不存状态）；**丢的轮数必须是 `CHUNK_TURNS` 的整数倍，凑不满一整块就一块都不丢**，因此两次裁剪之间窗口只在末尾追加，前一轮的窗口必然是后一轮窗口的前缀。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -651,7 +650,14 @@ git commit -m "feat: 日记数据模型与按天原子存储"
 from datetime import date
 
 import pytest
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 
 from daykeep import window
 from daykeep.models import DayMeta, DayRecord, Moment
@@ -716,19 +722,46 @@ def test_trim_starts_at_turn_boundary():
 
 
 def test_trim_never_orphans_a_tool_call():
-    """每一轮的 ModelRequest/ModelResponse 必须成对出现，不能从回复中间切开。"""
-    messages = many_turns(200)
-    trimmed, _ = window.trim(messages, budget=20_000)
+    """带工具调用的轮次必须整轮保留：不能留下有 tool call 却没有 tool result 的历史。"""
+    messages = []
+    for i in range(200):
+        messages.append(ModelRequest(parts=[UserPromptPart(content=f"第{i}轮 " + "字" * 200)]))
+        messages.append(ModelResponse(parts=[ToolCallPart("upsert_moment", {"title": f"t{i}"})]))
+        messages.append(ModelRequest(parts=[ToolReturnPart("upsert_moment", f"已记录 #{i}")]))
+        messages.append(ModelResponse(parts=[TextPart("记下了。")]))
+
+    trimmed, dropped = window.trim(messages, budget=20_000)
+    assert dropped > 0
     assert isinstance(trimmed[0], ModelRequest)
-    assert len(trimmed) % 2 == 0
+    assert any(isinstance(p, UserPromptPart) for p in trimmed[0].parts)
+
+    calls = sum(
+        1 for m in trimmed if isinstance(m, ModelResponse)
+        for p in m.parts if isinstance(p, ToolCallPart)
+    )
+    returns = sum(
+        1 for m in trimmed if isinstance(m, ModelRequest)
+        for p in m.parts if isinstance(p, ToolReturnPart)
+    )
+    assert calls > 0
+    assert calls == returns
 
 
-def test_trim_keeps_at_least_min_turns():
-    """最近 30 轮落在 target 与 budget 之间时，下限生效：只丢到剩 30 轮。"""
+def test_trim_keeps_at_least_min_turns_and_stays_chunk_aligned():
+    """凑不满整块就不丢：200 轮里最多只能丢 8 个整块（160 轮），于是剩 40 轮。"""
     messages = many_turns(200, size=300)
     trimmed, dropped = window.trim(messages, budget=10_000)
-    assert dropped == 200 - window.MIN_TURNS
-    assert len(window.turn_starts(trimmed)) == window.MIN_TURNS
+    assert dropped == 160
+    assert dropped % window.CHUNK_TURNS == 0
+    assert len(window.turn_starts(trimmed)) >= window.MIN_TURNS
+
+
+def test_trim_drops_nothing_when_one_chunk_does_not_fit_the_floor():
+    """40 轮时最多只能丢 0 个整块（(40-30)//20 == 0），因此一块都不丢。"""
+    messages = many_turns(40, size=300)
+    trimmed, dropped = window.trim(messages, budget=10_000)
+    assert dropped == 0
+    assert trimmed == messages
 
 
 def test_trim_drops_whole_chunk_for_cache_stability():
@@ -837,6 +870,9 @@ def trim(
     因为入参始终是完整归档，若按"能塞进 target 的最小起点"来丢，归档每长一轮、
     起点就往后挪一轮，窗口前缀每轮都变，prompt cache 永远命中不了。
     对齐到固定块之后，起点在一次裁剪后的若干轮内钉死不动，前缀才稳定。
+
+    只能整块地丢，凑不满一整块就一块都不丢：宁可让这一次请求超出 budget，
+    也不能让起点每轮挪一轮。budget 比模型真实窗口低 32k，超出 budget 不等于超出窗口。
     """
     if size_of(messages) <= budget:
         return list(messages), 0
@@ -845,14 +881,12 @@ def trim(
     if len(starts) <= 1:
         return list(messages), 0
 
-    max_drop = max(0, len(starts) - min_turns)
-    drop_turns = max_drop
-    candidate = chunk
-    while candidate <= max_drop:
-        if size_of(messages[starts[candidate] :]) <= target:
-            drop_turns = candidate
+    max_chunks = (len(starts) - min_turns) // chunk
+    drop_turns = max_chunks * chunk
+    for k in range(1, max_chunks + 1):
+        if size_of(messages[starts[k * chunk] :]) <= target:
+            drop_turns = k * chunk
             break
-        candidate += chunk
 
     return list(messages[starts[drop_turns] :]), drop_turns
 
@@ -877,7 +911,7 @@ def with_notice(
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_window.py -v`
-Expected: 13 passed。
+Expected: 15 passed。
 若 `test_size_of_uses_reported_tokens_when_present` 失败，说明 `ModelResponse` 不接受 `usage=` 关键字或 `total_tokens` 字段名不同，把该测试改成构造真实 usage 的等价写法（其余测试不依赖它）。
 
 - [ ] **Step 5: 提交**
