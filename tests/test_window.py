@@ -132,6 +132,29 @@ def test_trim_is_a_noop_below_min_turns():
     assert trimmed == messages
 
 
+def test_trim_compares_candidate_sizes_by_estimate_not_reported_usage():
+    """候选窗口的大小必须用估算比较。
+
+    用上报的 total_tokens 会把比较退化成常量（那是最后一次响应的用量，对任意后缀都一样），
+    于是找不到任何"够小"的候选，永远走兜底、每次都丢满额。
+    这条构造：丢一档（20 轮）就已够小，因此正确答案是 20 而不是 max_chunks。
+    """
+    messages = many_turns(100, size=100)[:-1] + [
+        ModelResponse(
+            parts=[TextPart("嗯")],
+            usage=RequestUsage(input_tokens=15_000, output_tokens=5_000),
+        )
+    ]
+    starts = window.turn_starts(messages)
+    one_chunk = window.estimate_size(messages[starts[20] :])
+    budget = int(one_chunk / 0.7) + 1_000
+
+    assert window.size_of(messages) > budget  # 触发裁剪
+    trimmed, dropped = window.trim(messages, budget=budget)
+    assert dropped == 20  # 而不是 max_chunks(3)*20 = 60
+    assert len(window.turn_starts(trimmed)) == 80
+
+
 def test_trim_drops_whole_chunk_for_cache_stability():
     """连续两次裁剪之间，前一轮的窗口是后一轮窗口的前缀。"""
     messages = many_turns(200)

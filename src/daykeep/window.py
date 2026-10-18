@@ -37,11 +37,20 @@ def turn_starts(messages: Sequence[ModelMessage]) -> list[int]:
 
 
 def size_of(messages: Sequence[ModelMessage]) -> int:
-    """优先用 provider 上报的 total_tokens；拿不到才回退字符估算。"""
+    """整段历史当前占多大：优先用 provider 上报的 total_tokens，拿不到才回退字符估算。
+
+    这是"现在超预算了吗"的信号。**不能拿它比较某个后缀切片的大小** —— 上报值是最后一次
+    响应的总用量，对任意后缀都返回同一个数，比较会退化成常量。比较候选窗口用 estimate_size。
+    """
     for message in reversed(messages):
         usage = getattr(message, "usage", None)
         if usage is not None and usage.total_tokens:
             return usage.total_tokens
+    return estimate_size(messages)
+
+
+def estimate_size(messages: Sequence[ModelMessage]) -> int:
+    """纯字符估算，随切片大小单调变化 —— 用于判断某个候选窗口是否塞得进目标。"""
     return sum(estimate_tokens(_text_of(m)) for m in messages)
 
 
@@ -81,7 +90,7 @@ def trim(
     max_chunks = max(0, (len(starts) - min_turns) // chunk)
     drop_turns = max_chunks * chunk
     for k in range(1, max_chunks + 1):
-        if size_of(messages[starts[k * chunk] :]) <= target:
+        if estimate_size(messages[starts[k * chunk] :]) <= target:
             drop_turns = k * chunk
             break
 
