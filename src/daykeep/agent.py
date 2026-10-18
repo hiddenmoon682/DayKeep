@@ -33,9 +33,8 @@ def upsert(
                 moment.content = content
                 moment.mood = mood
                 return moment
-    moment = Moment(
-        id=id or next_moment_id(record), time=time, title=title, content=content, mood=mood
-    )
+        raise KeyError(id)
+    moment = Moment(id=next_moment_id(record), time=time, title=title, content=content, mood=mood)
     record.moments.append(moment)
     return moment
 
@@ -143,7 +142,11 @@ def build_agent(model: Model) -> Agent[Deps, str]:
         mood: Mood | None = None,
     ) -> str:
         """记录或更新今天日记里的一件事。补充已有的事必须传 id。"""
-        moment = upsert(ctx.deps.record, id, time, title, content, mood)
+        try:
+            moment = upsert(ctx.deps.record, id, time, title, content, mood)
+        except KeyError:
+            existing = "、".join(f"#{m.id} {m.title}" for m in ctx.deps.record.moments) or "无"
+            raise ModelRetry(f"没有 id={id} 的记录。现有的记录：{existing}") from None
         ctx.deps.save()
         return f"已记录 #{moment.id} {moment.title}"
 

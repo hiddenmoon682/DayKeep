@@ -77,6 +77,13 @@ def test_drop_removes_and_raises_on_missing():
     assert "3" in str(exc.value)
 
 
+def test_upsert_unmatched_id_raises_instead_of_duplicating():
+    record = DayRecord(date=D, moments=[Moment(id=1, title="a", content="x")])
+    with pytest.raises(KeyError):
+        agent.upsert(record, 9, None, "b", "y", None)
+    assert len(record.moments) == 1
+
+
 def test_search_in_messages_finds_turn(tmp_path: Path):
     messages = [
         ModelRequest(parts=[UserPromptPart(content="[09:10] 早上面了腾讯二面")]),
@@ -178,6 +185,19 @@ def test_delete_missing_id_makes_model_retry(tmp_path: Path):
     )
     a = agent.build_agent(model)
     a.run_sync("删掉第 99 条", deps=make_state(tmp_path))
+    assert len(model.calls) == 2
+    assert store.load_record(tmp_path, D).moments == []
+
+
+def test_upsert_missing_id_makes_model_retry(tmp_path: Path):
+    model = scripted(
+        ModelResponse(
+            parts=[ToolCallPart("upsert_moment", {"id": 99, "title": "t", "content": "c"})]
+        ),
+        ModelResponse(parts=[TextPart("那条记录不存在。")]),
+    )
+    a = agent.build_agent(model)
+    a.run_sync("改一下第 99 条", deps=make_state(tmp_path))
     assert len(model.calls) == 2
     assert store.load_record(tmp_path, D).moments == []
 

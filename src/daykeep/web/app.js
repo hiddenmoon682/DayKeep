@@ -58,6 +58,10 @@ async function showDay(day) {
 
 function applyEvent(name, data) {
   if (name === "day") {
+    if ($("date").textContent && $("date").textContent !== data.date) {
+      $("transcript").innerHTML = "";
+      openReply = null;
+    }
     $("date").textContent = data.date;
   } else if (name === "delta") {
     if (!openReply) openReply = append("assistant", "");
