@@ -1,7 +1,6 @@
 from datetime import date
 from pathlib import Path
 
-import pytest
 import yaml
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
@@ -12,7 +11,12 @@ D = date(2026, 10, 17)
 
 RECORD = DayRecord(
     date=D,
-    meta=DayMeta(title="实习与室友", mood="一般", tags=["实习", "宿舍"], summary="上午面试，晚上和室友聊了很久。"),
+    meta=DayMeta(
+        title="实习与室友",
+        mood="一般",
+        tags=["实习", "宿舍"],
+        summary="上午面试，晚上和室友聊了很久。",
+    ),
     moments=[
         Moment(id=1, time="14:30", title="腾讯二面", content="问了很多网络的问题。", mood="不错"),
         Moment(id=2, time=None, title="室友争执", content="为了电费吵了几句。"),

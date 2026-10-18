@@ -40,7 +40,14 @@ def render_markdown(record: DayRecord) -> str:
     heading = record.date.isoformat()
     if record.meta.title:
         heading += f" {record.meta.title}"
-    lines = ["---", yaml.safe_dump(front, allow_unicode=True, sort_keys=False).strip(), "---", "", f"# {heading}", ""]
+    lines = [
+        "---",
+        yaml.safe_dump(front, allow_unicode=True, sort_keys=False).strip(),
+        "---",
+        "",
+        f"# {heading}",
+        "",
+    ]
     if record.meta.summary:
         lines += [record.meta.summary, ""]
     if not record.moments:
