@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- **Python 3.12**，用 `uv` 管理。不要用 3.14（AI 生态 wheel 普遍未跟上）。
+- **Python 固定 3.12**。机器上 3.12 在 `D:\python\python.exe`（非 PATH 默认；PATH 上的 `python` 是 3.14 和 MSYS2 的 mingw python，都不能用）。因此仓库里必须有 `.python-version` 内容为 `3.12`，且 `pyproject.toml` 写 `requires-python = ">=3.12,<3.13"` —— 否则 uv 会挑 3.14。
+- **`uv` 装在 `D:\python\Scripts\uv.exe`，可能不在 PATH**。每条 bash 命令先 `export PATH="/d/python/Scripts:$PATH"`。
 - **数据根目录默认 `~/DayKeep`，绝不放仓库目录内**（避免用户提 PR 时把自己的日记提交上去）。测试一律用 `tmp_path` 覆盖。
 - **服务只监听 `127.0.0.1`**。
 - **界面文案全中文。**
@@ -65,7 +66,14 @@
 - [ ] **Step 1: 初始化仓库并写 pyproject**
 
 ```bash
+export PATH="/d/python/Scripts:$PATH"
 cd /d/C++Code/DayKeep && git init
+```
+
+`.python-version`（一行，末尾留着换行）：
+
+```
+3.12
 ```
 
 `.gitignore`：
@@ -84,7 +92,7 @@ __pycache__/
 [project]
 name = "daykeep"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "pydantic-ai-slim[openai]>=2.0.0",
     "fastapi>=0.115",
@@ -118,8 +126,8 @@ src = ["src", "tests"]
 
 - [ ] **Step 2: 安装依赖并确认 Python 版本**
 
-Run: `cd /d/C++Code/DayKeep && uv sync && uv run python -c "import sys; print(sys.version)"`
-Expected: 打印 3.12.x
+Run: `export PATH="/d/python/Scripts:$PATH" && cd /d/C++Code/DayKeep && uv sync && uv run python -c "import sys; print(sys.version)"`
+Expected: 打印 **3.12.x**（不是 3.14）。若打印的是 3.14，说明 `.python-version` 没生效，检查该文件内容和 `requires-python`。
 
 - [ ] **Step 3: 写 clock 的失败测试**
 
@@ -297,7 +305,7 @@ Expected: 4 passed
 - [ ] **Step 11: 提交**
 
 ```bash
-git add .gitignore pyproject.toml uv.lock src/daykeep tests/test_clock.py tests/test_config.py
+git add .gitignore .python-version pyproject.toml uv.lock src/daykeep tests/test_clock.py tests/test_config.py
 git commit -m "feat: 项目骨架、配置加载与逻辑日"
 ```
 
