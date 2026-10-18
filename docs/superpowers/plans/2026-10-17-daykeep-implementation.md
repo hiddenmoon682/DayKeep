@@ -2155,8 +2155,14 @@ Expected: 1 passed
 
 - [ ] **Step 5: 静态检查**
 
-Run: `uv run ruff check . && uv run ruff format --check .`
-Expected: 无告警。有告警就修，不要用 `# noqa` 掩盖。
+先在 `pyproject.toml` 的 `[tool.ruff]` 下加一行 `extend-exclude = ["docs"]`。
+
+原因：ruff 0.17 会连 Markdown 里的 Python 代码块一起格式化，而 `docs/superpowers/` 下的设计文档与实施计划通篇都是示例代码 —— 它们是给人读的规格文本，被 ruff 重排会与正文打架。所以排除 `docs`，而不是去改文档。
+
+然后：
+
+Run: `export PATH="/d/python/Scripts:$PATH" && uv run ruff check . && uv run ruff format --check .`
+Expected: `All checks passed!`，且所有文件格式一致。有告警就修，不要用 `# noqa` 掩盖。
 
 - [ ] **Step 6: 全量测试**
 
