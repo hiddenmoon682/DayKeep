@@ -14,6 +14,7 @@
 
 - **Python 固定 3.12**。机器上 3.12 在 `D:\python\python.exe`（非 PATH 默认；PATH 上的 `python` 是 3.14 和 MSYS2 的 mingw python，都不能用）。因此仓库里必须有 `.python-version` 内容为 `3.12`，且 `pyproject.toml` 写 `requires-python = ">=3.12,<3.13"` —— 否则 uv 会挑 3.14。
 - **`uv` 装在 `D:\python\Scripts\uv.exe`，可能不在 PATH**。每条 bash 命令先 `export PATH="/d/python/Scripts:$PATH"`。
+- **每个任务提交前，对本次改动的文件跑 `uv run ruff check --fix` 与 `uv run ruff format`**，保证交付的代码 ruff 全绿、格式统一。不要把这些留给 Task 7 事后统一 —— 那会让每个任务都在审查时被重复提同一件事。（计划正文的示例代码里有几行超过 100 列、个别测试文件带了未使用的 `import pytest`，实现时以 ruff 的判定为准。）
 - **数据根目录默认 `~/DayKeep`，绝不放仓库目录内**（避免用户提 PR 时把自己的日记提交上去）。测试一律用 `tmp_path` 覆盖。
 - **服务只监听 `127.0.0.1`**。
 - **界面文案全中文。**
@@ -1383,7 +1384,6 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import httpx
-import pytest
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
