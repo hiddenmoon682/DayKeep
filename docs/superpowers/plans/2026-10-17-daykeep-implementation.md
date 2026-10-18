@@ -6,7 +6,7 @@
 
 **Architecture:** Pydantic AI v2 负责 Agent 循环、工具 schema 派生与流式事件；FastAPI 把流式事件翻译成 SSE 推给零构建的前端；日记以「当天一个 JSON 文件」为唯一数据源，另导出人类可读的 markdown；上下文窗口是归档的纯函数（按块裁剪，不存状态、不做 LLM 摘要）。
 
-**Tech Stack:** Python 3.12、uv、pydantic-ai-slim[openai]、FastAPI、uvicorn、pydantic-settings、PyYAML、markdown-it-py、pytest、ruff
+**Tech Stack:** Python 3.12、uv、pydantic-ai-slim[openai]、FastAPI、uvicorn、PyYAML、markdown-it-py、pytest、ruff
 
 **Spec:** `docs/superpowers/specs/2026-10-17-daykeep-design.md`
 
@@ -22,7 +22,7 @@
 - **窗口是归档的纯函数**：不存窗口状态；同样的归档 + 预算必然算出同样的窗口。
 - **所有写盘都是「先写临时文件再 `os.replace`」**。
 - **逻辑日期由 deps 注入，模型不得自己填日期。**
-- **不引入 tokenizer**：判超预算优先用 provider 上报的 `total_tokens`，缺失时才回退字符估算（CJK 每字符 1 token，其他每 4 字符 1 token）。
+- **不引入 tokenizer**：判超预算优先用 provider 上报的 `total_tokens`，缺失时才回退字符估算（CJK 每字符 1 token，其他每 4 字符 1 token）。约束的是**我们自己的代码**不用 tokenizer 做估算；依赖图里由 `pydantic-ai-slim` 传递引入的库（例如 `tiktoken`）不算违反 —— 我们不导入、不使用它。
 - 不做 LLM 摘要式上下文压缩。
 - **Pydantic AI 的导入路径以安装版本为准**：事件类型（`PartDeltaEvent`、`TextPartDelta`、`FunctionToolResultEvent`）在 `pydantic_ai` 顶层有导出；消息类型（`ModelRequest`、`ModelResponse`、`UserPromptPart`、`TextPart`）在 `pydantic_ai.messages`。若某个名称导入失败，用 `uv run python -c "import pydantic_ai, pydantic_ai.messages as m; print(dir(pydantic_ai)); print(dir(m))"` 确认后再改，不要猜。
 
@@ -97,7 +97,6 @@ dependencies = [
     "pydantic-ai-slim[openai]>=2.0.0",
     "fastapi>=0.115",
     "uvicorn>=0.32",
-    "pydantic-settings>=2.6",
     "pyyaml>=6.0",
     "markdown-it-py>=3.0",
 ]

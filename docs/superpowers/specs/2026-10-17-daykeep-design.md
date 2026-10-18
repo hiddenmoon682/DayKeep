@@ -21,7 +21,7 @@
 | 后端 | FastAPI + uvicorn，SSE 用 `StreamingResponse` 手写 | 只有一个流式端点，不额外引入 SSE 库 |
 | 前端 | 原生 HTML/CSS/JS，没有构建步骤 | 不需要 node_modules；二期 pywebview 直接复用 |
 | Markdown 渲染 | 服务端用 `markdown-it-py`（`html=False`） | 前端不引第三方 JS；LLM 输出里夹带的原始 HTML 会被转义，杜绝 XSS |
-| 配置 | `pydantic-settings` 读 TOML | 有类型校验，出错时能给出明确提示 |
+| 配置 | `tomllib` + Pydantic 模型 | 标准库读 TOML，Pydantic 做类型校验，出错时能给出明确提示；不额外引入配置库 |
 | 日记 front-matter | PyYAML | |
 | 测试 | pytest + anyio + httpx；Pydantic AI 的 `FunctionModel` / `TestModel` | 整条链路测试不联网、不花钱、结果确定 |
 | 静态检查 | ruff | |
