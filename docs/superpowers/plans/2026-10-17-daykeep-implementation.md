@@ -946,7 +946,7 @@ git commit -m "feat: 上下文窗口裁剪（纯函数，无状态、按块丢�
   - 纯函数：`next_moment_id(record) -> int`、`upsert(record, id, time, title, content, mood) -> Moment`、`drop(record, id) -> Moment`、`recap_block(home, today, days=7) -> str`、`search_in_messages(messages, query, max_hits=5) -> str`、`search_in_entries(home, today, query, days_back=30, max_hits=5) -> str`、`instructions(recap, today) -> str`
   - `build_agent(model) -> Agent[DayState, str]`
 
-**设计要点：** 所有逻辑都写成**纯函数**，`@agent.tool` 只是三行包装 —— 这样绝大部分行为测试不经过模型就能跑。instructions 用 `@agent.instructions` 从 deps 现算：逻辑日 + 最近 7 天回顾。回顾只读过去的日子（当天不参与），一个逻辑日内逐字节不变，缓存安全。
+**设计要点：** 所有逻辑都写成**纯函数**，`@agent.tool` 只是三行包装 —— 这样绝大部分行为测试不经过模型就能跑。**七个个工具全部用 `@agent.tool`**（它们都要 `RunContext[Deps]`；`@agent.tool_plain` 是给不需要上下文的工具用的，配 `RunContext` 参数会在 2.57 上直接报 `UserError`）。instructions 用 `@agent.instructions` 从 deps 现算：逻辑日 + 最近 7 天回顾。回顾只读过去的日子（当天不参与），一个逻辑日内逐字节不变，缓存安全。
 
 - [ ] **Step 1: 给 store 补 `load_record`**
 
@@ -981,7 +981,16 @@ D = date(2026, 10, 17)
 
 
 def make_state(tmp_path: Path) -> store.DayState:
-    return store.DayState.load(tmp_path, D)
+    state = store.DayState.load(tmp_path, D)
+    state.save()          # 先落盘，这样后面 load_record 才读得到空的一天
+    return state
+
+
+def turn(text: str, reply: str = "嗯") -> list:
+    return [
+        ModelRequest(parts=[UserPromptPart(content=text)]),
+        ModelResponse(parts=[TextPart(reply)]),
+    ]
 
 
 def scripted(*responses):
@@ -1330,23 +1339,23 @@ def build_agent(model) -> Agent[Deps, str]:
         ctx.deps.save()
         return "已更新今天日记的整体信息"
 
-    @a.tool_plain
+    @a.tool
     async def read_today_entry(ctx: RunContext[Deps]) -> str:
         """读取今天日记的完整内容，每条记录都带 id。"""
         return render_markdown(ctx.deps.record)
 
-    @a.tool_plain
+    @a.tool
     async def search_today_chat(ctx: RunContext[Deps], query: str) -> str:
         """在今天完整的对话记录里搜索关键词，返回命中的整轮原文。"""
         return search_in_messages(ctx.deps.messages, query)
 
-    @a.tool_plain
+    @a.tool
     async def read_entry(ctx: RunContext[Deps], date: date) -> str:
         """读取某一天日记的完整内容。"""
         text = read_entry_text(ctx.deps.home, date)
         return text or f"{date.isoformat()} 那天没有记录。"
 
-    @a.tool_plain
+    @a.tool
     async def search_entries(ctx: RunContext[Deps], query: str, days_back: int = 30) -> str:
         """在过去若干天的日记正文里搜索关键词。"""
         return search_in_entries(ctx.deps.home, ctx.deps.date, query, days_back)
@@ -1359,7 +1368,7 @@ def build_agent(model) -> Agent[Deps, str]:
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_agent.py -v`
-Expected: 16 passed
+Expected: 15 passed
 
 - [ ] **Step 6: 跑全量测试**
 
