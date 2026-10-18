@@ -92,13 +92,15 @@ def create_app(settings: Settings, model) -> FastAPI:
     @app.post("/api/chat")
     async def chat(payload: dict):
         text = (payload or {}).get("text", "")
-        d, state = today_state()
         budget = window.resolve_budget(model.context_window, settings.model.budget)
         if window.estimate_tokens(text) > budget // 2:
             raise HTTPException(413, "这条太长了，分几次发")
 
         async def stream():
+            # 读盘必须在锁内：否则两个并发的 chat 会各自读到同一份旧快照，
+            # 后写的那次会把前一次的整轮对话覆盖掉（回合静默丢失）。
             async with lock:
+                d, state = today_state()
                 yield sse("day", {"date": d.isoformat()})
                 if not settings.model.api_key:
                     yield sse(
@@ -116,7 +118,7 @@ def create_app(settings: Settings, model) -> FastAPI:
                     if index == 0 and dropped:
                         yield sse("trimmed", {"dropped_turns": dropped})
                     window_messages = window.with_notice(window_messages, state.record, dropped)
-                    started = False
+                    emitted = False
                     try:
                         # deps 始终带完整归档，message_history 只带裁剪后的窗口；
                         # 否则 search_today_chat 看不到被裁掉的原文。
@@ -130,14 +132,17 @@ def create_app(settings: Settings, model) -> FastAPI:
                                     event.part, TextPart
                                 ):
                                     if event.part.content:
-                                        started = True
+                                        emitted = True
                                         yield sse("delta", {"text": event.part.content})
                                 elif isinstance(event, PartDeltaEvent) and isinstance(
                                     event.delta, TextPartDelta
                                 ):
-                                    started = True
+                                    emitted = True
                                     yield sse("delta", {"text": event.delta.content_delta})
                                 elif isinstance(event, FunctionToolResultEvent):
+                                    # 工具已经落盘（每个 mutating 工具在体内 save），
+                                    # 这一轮就绝不能重试，否则副作用会执行两遍。
+                                    emitted = True
                                     label = str(getattr(event.part, "content", ""))
                                     yield sse("tool", {"label": label})
                                     if event.part.tool_name in MUTATING_TOOLS:
@@ -153,8 +158,9 @@ def create_app(settings: Settings, model) -> FastAPI:
                         state.save()
                         break
                     except Exception as exc:  # noqa: BLE001
-                        # 已经吐过字就不再重试，否则用户会看到重复内容
-                        if index < len(candidates) - 1 and not started:
+                        # 已经吐过内容（文字或工具结果）就不再重试，
+                        # 否则用户会看到重复内容、工具副作用也会执行两遍
+                        if index < len(candidates) - 1 and not emitted:
                             continue
                         yield sse("error", {"message": f"调用模型失败：{exc}", "retryable": True})
                         return
