@@ -93,6 +93,22 @@ def test_trim_drops_whole_chunk_for_cache_stability():
     assert second[: len(first)] == first
 
 
+def test_trim_chunk_alignment_holds_for_full_size_growth():
+    """追加一个与其它轮同规模的整轮后，丢的轮数必须一动不动。
+
+    上一条用 5 个 token 的 turn("新的一轮") 追加，恰好让"能塞进 target 的轮数"
+    多出一轮，把起点后移与轮数增加相互抵消，于是连"最小起点"的错实现也能通过。
+    换成整轮才能锁住块对齐这条不变量：错实现会 132->133，对齐则停在 140。
+    """
+    messages = many_turns(200)
+    first, dropped_first = window.trim(messages, budget=20_000)
+    grown = messages + turn("新的一轮 " + "字" * 200)
+    second, dropped_second = window.trim(grown, budget=20_000)
+    assert dropped_first % window.CHUNK_TURNS == 0
+    assert dropped_second == dropped_first
+    assert second[: len(first)] == first
+
+
 def test_with_notice_noop_when_nothing_dropped():
     messages = many_turns(3)
     assert window.with_notice(messages, DayRecord(date=date(2026, 10, 17)), 0) == messages
