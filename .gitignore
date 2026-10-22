@@ -3,3 +3,10 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+
+# 用户数据：默认在 ~/DayKeep，不在仓库内。这里兜一层，防止有人把数据根目录
+# 指进仓库（或直接把 config.toml 拖进来）时把自己的密钥和日记提交上去。
+config.toml
+.daykeep/
+entries/
